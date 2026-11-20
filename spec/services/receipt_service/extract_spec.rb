@@ -85,4 +85,32 @@ RSpec.describe ReceiptService::Extract do
     expect { described_class.new(receipt:).run! }.not_to raise_error
     expect(Receipt.exists?(receipt.id)).to be(false)
   end
+
+  context "with vision extraction on for the uploader" do
+    it "reads the receipt with the vision extractor instead of the text model" do
+      receipt = build_receipt
+      Flipper.enable(:receipt_vision_extraction_2026_11_20, receipt.user)
+      allow(ReceiptService::VisionExtract).to receive(:fields_for)
+        .and_return({ total_amount_cents: 12_34, currency: "usd", transaction_memo: "🧾 Lunch" }.with_indifferent_access)
+
+      described_class.new(receipt:).run!
+
+      expect(ReceiptService::VisionExtract).to have_received(:fields_for).with(receipt, text: "some receipt text")
+      expect(receipt.reload).to have_attributes(extracted_total_amount_cents: 12_34, extracted_currency: "USD",
+                                                suggested_memo: "🧾 Lunch", data_extracted: true)
+      expect(a_request(:post, "https://api.openai.com/v1/chat/completions")).not_to have_been_made
+    end
+
+    it "reads a receipt with no text, which the text model would skip" do
+      receipt = build_receipt(textual_content: nil)
+      Flipper.enable(:receipt_vision_extraction_2026_11_20, receipt.user)
+      allow_any_instance_of(Receipt).to receive(:extract_textual_content!).and_return({ text: nil })
+      allow(ReceiptService::VisionExtract).to receive(:fields_for)
+        .and_return({ total_amount_cents: 5_00 }.with_indifferent_access)
+
+      described_class.new(receipt:).run!
+
+      expect(receipt.reload.extracted_total_amount_cents).to eq(5_00)
+    end
+  end
 end
