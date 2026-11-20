@@ -12,7 +12,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_20_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "citext"
   enable_extension "pg_catalog.plpgsql"
@@ -2354,6 +2354,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
     t.string "extracted_merchant_zip_code"
     t.integer "extracted_subtotal_amount_cents"
     t.integer "extracted_total_amount_cents"
+    t.string "extraction_request_id"
     t.bigint "receiptable_id"
     t.string "receiptable_type"
     t.string "suggested_memo"

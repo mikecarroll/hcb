@@ -85,4 +85,35 @@ RSpec.describe ReceiptService::Extract do
     expect { described_class.new(receipt:).run! }.not_to raise_error
     expect(Receipt.exists?(receipt.id)).to be(false)
   end
+
+  describe "Coolhand capture" do
+    after { Coolhand.reset_configuration! }
+
+    it "turns capture on for the extraction call only, under its own workload" do
+      receipt = build_receipt
+      during_request = nil
+
+      stub_request(:post, "https://api.openai.com/v1/chat/completions")
+        .to_return do |_request|
+          during_request = { capture: Thread.current[:coolhand_capture_override], context: Coolhand::DeclaredContext.current }
+          { status: 200, body: ai_response_body, headers: { "Content-Type" => "application/json", "x-request-id" => "req_abc" } }
+        end
+
+      described_class.new(receipt:).run!
+
+      expect(during_request[:capture]).to be(true)
+      expect(during_request[:context].dig(:workload, :key)).to eq("ReceiptService::Extract#run!")
+      expect(Thread.current[:coolhand_capture_override]).to be_nil
+    end
+
+    it "saves OpenAI's request ID so feedback can find the call" do
+      receipt = build_receipt
+      stub_request(:post, "https://api.openai.com/v1/chat/completions")
+        .to_return(status: 200, body: ai_response_body, headers: { "Content-Type" => "application/json", "x-request-id" => "req_abc" })
+
+      described_class.new(receipt:).run!
+
+      expect(receipt.reload.extraction_request_id).to eq("req_abc")
+    end
+  end
 end

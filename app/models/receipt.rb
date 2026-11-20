@@ -14,6 +14,7 @@
 #  extracted_merchant_zip_code     :string
 #  extracted_subtotal_amount_cents :integer
 #  extracted_total_amount_cents    :integer
+#  extraction_request_id           :string
 #  suggested_memo                  :string
 #  textual_content_bidx            :string
 #  textual_content_ciphertext      :text
