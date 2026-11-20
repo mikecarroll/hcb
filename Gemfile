@@ -38,6 +38,8 @@ gem "country_select", "~> 8.0"
 
 gem "faraday", "~> 1.10.6" # web requests
 
+gem "squishling", github: "Coolhand-Labs/squishling", branch: "image-inputs" # schema-validated LLM calls; image input is unreleased
+
 gem "stripe", "11.7.0"
 gem "plaid", "~> 44.0"
 gem "yellow_pages", github: "hackclub/yellow_pages"

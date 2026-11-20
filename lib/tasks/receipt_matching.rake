@@ -17,4 +17,15 @@ namespace :receipt_matching do
 
     puts JSON.pretty_generate(report)
   end
+
+  desc "Compare the text and vision receipt extractors on receipts attached to card charges. Calls the provider: " \
+       "limit (receipts) and max_tokens (all requests together) are required, e.g. " \
+       "rake 'receipt_matching:extraction_eval[2026-07-01,2026-08-31,50,500000]'"
+  task :extraction_eval, [:from, :to, :limit, :max_tokens] => :environment do |_task, args|
+    report = ReceiptService::ExtractionEval.new(from: Date.parse(args.fetch(:from)), to: Date.parse(args.fetch(:to)),
+                                                limit: Integer(args.fetch(:limit)), max_tokens: Integer(args.fetch(:max_tokens))).run
+    report.delete(:rows)
+
+    puts JSON.pretty_generate(report)
+  end
 end
