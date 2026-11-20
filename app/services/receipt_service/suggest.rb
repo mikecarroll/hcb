@@ -96,6 +96,17 @@ module ReceiptService
       distance_from(features(hcb_code, @extracted))
     end
 
+    # What the card was charged, in the merchant's currency when the network
+    # reports it.
+    def charged_amount_cents(hcb_code)
+      merchant_amount = hcb_code.pt&.raw_pending_stripe_transaction&.stripe_transaction&.[]("merchant_amount")
+      (merchant_amount || hcb_code.amount_cents).abs
+    end
+
+    def charge_date(hcb_code)
+      (hcb_code.pt&.raw_pending_stripe_transaction&.created_at || hcb_code.date).to_date
+    end
+
     private
 
     # Each feature's value runs from 0 (match) to 1 (miss). A nil value means
@@ -130,8 +141,7 @@ module ReceiptService
       receipt_total = extracted.extracted_total_amount_cents&.abs
       return 1 if receipt_total.nil?
 
-      merchant_amount = hcb_code.pt&.raw_pending_stripe_transaction&.stripe_transaction&.[]("merchant_amount")
-      charged = (merchant_amount || hcb_code.amount_cents).abs
+      charged = charged_amount_cents(hcb_code)
 
       if charged == receipt_total
         0
@@ -153,7 +163,7 @@ module ReceiptService
     def date_value(hcb_code, extracted)
       return nil if extracted.extracted_date.blank?
 
-      distance = ((hcb_code.pt&.raw_pending_stripe_transaction&.created_at || hcb_code.date).to_date - extracted.extracted_date.to_date).abs
+      distance = (charge_date(hcb_code) - extracted.extracted_date.to_date).abs
 
       if distance <= 1
         0
