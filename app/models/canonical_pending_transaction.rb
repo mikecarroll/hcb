@@ -171,6 +171,11 @@ class CanonicalPendingTransaction < ApplicationRecord
 
   after_create :write_hcb_code
   after_create_commit :write_system_event
+  # Defined before :assign_ledger_item, whose update! makes later create-only
+  # commit callbacks see an update and skip.
+  after_create_commit if: -> { Receipt::RerunSuggestionsJob.enqueue_for?(self) } do
+    Receipt::RerunSuggestionsJob.perform_later(self)
+  end
 
   attr_writer :stripe_cardholder
 

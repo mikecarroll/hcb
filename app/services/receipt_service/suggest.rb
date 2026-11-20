@@ -38,7 +38,9 @@ module ReceiptService
           }
         end
 
-        pairings = SuggestedPairing.upsert_all(pairs, unique_by: [:receipt_id, :hcb_code_id])
+        # A pairing the user already ignored, accepted or reversed keeps its
+        # state when matching runs again; only its distance is refreshed.
+        pairings = SuggestedPairing.upsert_all(pairs, unique_by: [:receipt_id, :hcb_code_id], update_only: [:distance, :ledger_item_id])
 
         if @receipt.receiptable.nil?
           Turbo::StreamsChannel.broadcast_action_to([@receipt.user, :receipt_bin], action: :refresh_suggested_pairings)
