@@ -15,12 +15,13 @@ class User
                .unreviewed
                .where(receipt_id: @receipts.ids - ineligible_receipt_ids)
                .where("distance <= ?", ReceiptService::Suggest::SUGGEST_MAX_DISTANCE)
+               .where("tiebreak_verdict IS DISTINCT FROM 'rejected'")
                .select("suggested_pairings.*",
-                       "RANK() OVER (PARTITION BY receipt_id ORDER BY distance) AS distance_rank",
-                       "COUNT(*) OVER (PARTITION BY receipt_id, distance) AS distance_ties")
+                       "RANK() OVER (PARTITION BY receipt_id ORDER BY CASE WHEN tiebreak_verdict = 'picked' THEN 0 ELSE 1 END, distance) AS distance_rank",
+                       "COUNT(*) OVER (PARTITION BY receipt_id, tiebreak_verdict, distance) AS distance_ties")
 
-      # Only the closest pairing for each receipt, and none when two are
-      # equally close: picking one of a tie would be a guess.
+      # Only the closest pairing for each receipt (or the tie-break's pick), and
+      # none when two are equally close: picking one of a tie would be a guess.
       SuggestedPairing
         .from(ranked, :suggested_pairings)
         .where(distance_rank: 1, distance_ties: 1)

@@ -5,15 +5,16 @@
 # Table name: suggested_pairings
 #
 #  id             :bigint           not null, primary key
-#  aasm_state     :string           not null
-#  accepted_at    :datetime
-#  distance       :float
-#  ignored_at     :datetime
-#  created_at     :datetime         not null
-#  updated_at     :datetime         not null
-#  hcb_code_id    :bigint           not null
-#  ledger_item_id :bigint
-#  receipt_id     :bigint           not null
+#  aasm_state       :string           not null
+#  accepted_at      :datetime
+#  distance         :float
+#  ignored_at       :datetime
+#  tiebreak_verdict :string
+#  created_at       :datetime         not null
+#  updated_at       :datetime         not null
+#  hcb_code_id      :bigint           not null
+#  ledger_item_id   :bigint
+#  receipt_id       :bigint           not null
 #
 # Indexes
 #
