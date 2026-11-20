@@ -21,7 +21,7 @@ module ReceiptService
       receipts_page receipts_page_drag_and_drop receipt_center receipt_center_drag_and_drop email_receipt_bin sms
     ].freeze
 
-    def initialize(from:, to:, points:, upload_methods: RECEIPT_BIN_UPLOAD_METHODS)
+    def initialize(from:, to:, points:, upload_methods: RECEIPT_BIN_UPLOAD_METHODS, tiebreak: false)
       missing = OUTCOMES - points.keys.map(&:to_sym)
       raise ArgumentError, "points are missing #{missing.join(", ")}" if missing.any?
 
@@ -29,6 +29,7 @@ module ReceiptService
       @to = to
       @points = points.transform_keys(&:to_sym)
       @upload_methods = upload_methods
+      @tiebreak = tiebreak
     end
 
     def run
@@ -57,7 +58,7 @@ module ReceiptService
         truth_was_candidate: truth.present? && candidates.exists?(id: truth.id),
         online: online_outcome(receipt, truth),
         stored: proxy_outcome(stored_decision(receipt), truth),
-        replayed: proxy_outcome(suggest.decide(ranked), truth),
+        replayed: proxy_outcome(suggest.decide(ranked, tiebreak: @tiebreak), truth),
       }
     end
 

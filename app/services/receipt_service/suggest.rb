@@ -14,6 +14,11 @@ module ReceiptService
     # this long after it.
     DATE_WINDOW_BEFORE = 7.days
     DATE_WINDOW_AFTER = 30.days
+    # With the tie-break on, a model chooses the suggestion when the runner-up
+    # is within this many points of the closest candidate.
+    TIEBREAK_MARGIN = Credentials.fetch(:RECEIPT_MATCHING, :TIEBREAK_MARGIN, fallback: 5).to_f
+    TIEBREAK_MAX_CANDIDATES = 5
+    TIEBREAK_FLAG = :receipt_matching_llm_tiebreak_2026_11_20
 
     def initialize(receipt:)
       @receipt = receipt
@@ -41,9 +46,10 @@ module ReceiptService
         pairings = SuggestedPairing.upsert_all(pairs, unique_by: [:receipt_id, :hcb_code_id])
 
         if @receipt.receiptable.nil?
+          decision = decide(ranked)
+          record_tiebreak(decision)
           Turbo::StreamsChannel.broadcast_action_to([@receipt.user, :receipt_bin], action: :refresh_suggested_pairings)
 
-          decision = decide(ranked)
           if decision[:action] == :auto_attach && decision[:hcb_code].missing_receipt? &&
              (pair = @receipt.suggested_pairings.unreviewed.find_by(hcb_code: decision[:hcb_code]))
             pair.mark_accepted!
@@ -75,14 +81,20 @@ module ReceiptService
     end
 
     # What to do with a ranked list: :auto_attach (emailed receipts only),
-    # :suggest, or :none. A tie for closest is never acted on.
-    def decide(ranked)
+    # :suggest, or :none. A tie for closest is never auto-attached. With
+    # `tiebreak`, a model picks the suggestion among near-ties instead.
+    def decide(ranked, tiebreak: tiebreak_enabled?)
       best, runner_up = ranked.first(2)
       return { action: :none } if best.nil? || best[:distance].nil?
-      return { action: :none, tied: true } if runner_up && runner_up[:distance] == best[:distance]
 
-      if @receipt.email_receipt_bin? && auto_attachable?(best)
+      tied = runner_up && runner_up[:distance] == best[:distance]
+
+      if !tied && @receipt.email_receipt_bin? && auto_attachable?(best)
         { action: :auto_attach, hcb_code: best[:hcb_code] }
+      elsif tiebreak && (near_ties = near_ties(ranked)).size > 1 && (tiebroken = break_tie(near_ties))
+        tiebroken
+      elsif tied
+        { action: :none, tied: true }
       elsif best[:distance] <= SUGGEST_MAX_DISTANCE
         { action: :suggest, hcb_code: best[:hcb_code] }
       else
@@ -97,6 +109,42 @@ module ReceiptService
     end
 
     private
+
+    def tiebreak_enabled?
+      Flipper.enabled?(TIEBREAK_FLAG, @receipt.user)
+    end
+
+    def near_ties(ranked)
+      closest = ranked.first[:distance]
+
+      ranked.select { |pairing| pairing[:distance] && pairing[:distance] <= SUGGEST_MAX_DISTANCE && pairing[:distance] - closest <= TIEBREAK_MARGIN }
+            .first(TIEBREAK_MAX_CANDIDATES)
+    end
+
+    # nil when the model can't answer, so the caller decides without it.
+    def break_tie(near_ties)
+      result = ReceiptService::TieBreak.call(**ReceiptService::TieBreak.input_for(receipt: @receipt, ranked: near_ties))
+      chosen = near_ties.find { |pairing| pairing[:hcb_code].id == result.hcb_code_id }
+
+      { action: chosen ? :suggest : :none, hcb_code: chosen&.dig(:hcb_code), tiebreak: near_ties.map { |pairing| pairing[:hcb_code] } }
+    rescue Squishling::Error => e
+      Rails.error.report(e, handled: true, context: { receipt_id: @receipt.id })
+      nil
+    end
+
+    # The receipt bin shows the model's pick first, and nothing for a receipt
+    # whose near-ties it turned down.
+    def record_tiebreak(decision)
+      pairings = @receipt.suggested_pairings
+      pairings.where.not(tiebreak_verdict: nil).update_all(tiebreak_verdict: nil)
+      return unless decision.key?(:tiebreak)
+
+      if decision[:hcb_code]
+        pairings.where(hcb_code: decision[:hcb_code]).update_all(tiebreak_verdict: "picked")
+      else
+        pairings.update_all(tiebreak_verdict: "rejected")
+      end
+    end
 
     # Each feature's value runs from 0 (match) to 1 (miss). A nil value means
     # the receipt or the charge doesn't say, and the feature is left out of the

@@ -5,7 +5,8 @@ namespace :receipt_matching do
        "(see ReceiptService::MatchingReplay::OUTCOMES), e.g. rake 'receipt_matching:replay[2026-07-01,2026-08-31,tmp/replay.csv]'"
   task :replay, [:from, :to, :csv_path] => :environment do |_task, args|
     points = JSON.parse(ENV.fetch("RECEIPT_MATCHING_POINTS"))
-    report = ReceiptService::MatchingReplay.new(from: Date.parse(args.fetch(:from)), to: Date.parse(args.fetch(:to)), points:).run
+    report = ReceiptService::MatchingReplay.new(from: Date.parse(args.fetch(:from)), to: Date.parse(args.fetch(:to)), points:,
+                                                tiebreak: ENV["RECEIPT_MATCHING_TIEBREAK"] == "true").run
     rows = report.delete(:rows)
 
     if args[:csv_path].present?

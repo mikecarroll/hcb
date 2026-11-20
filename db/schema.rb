@@ -12,7 +12,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_20_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "citext"
   enable_extension "pg_catalog.plpgsql"
@@ -2686,6 +2686,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
     t.datetime "ignored_at"
     t.bigint "ledger_item_id"
     t.bigint "receipt_id", null: false
+    t.string "tiebreak_verdict"
     t.datetime "updated_at", null: false
     t.index ["hcb_code_id"], name: "index_suggested_pairings_on_hcb_code_id"
     t.index ["ledger_item_id"], name: "index_suggested_pairings_on_ledger_item_id"

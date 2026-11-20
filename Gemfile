@@ -47,6 +47,8 @@ gem "pdf-reader" # ConfigurationIntegrity::Taxbandits::MaskedTinCheckJob checks 
 
 gem "airrecord", "~> 1.0" # Airtable API for internal operations
 
+gem "squishling", "~> 0.6.0" # schema-validated LLM calls (receipt matching tie-breaks)
+
 gem "twilio-ruby" # SMS notifications
 
 gem "google-apis-admin_directory_v1", "~> 0.67.0" # GSuite
