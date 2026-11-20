@@ -53,5 +53,83 @@ RSpec.describe ReceiptService::Suggest do
       expect(pairing).to be_accepted
       expect(receipt.reload.receiptable).to eq(hcb_code.ledger_item)
     end
+
+    it "doesn't attach automatically without a card match, however close" do
+      hcb_code = create_pending_card_charge(amount_cents: -12_34)
+      receipt.update!(extracted_total_amount_cents: 12_34, extracted_date: hcb_code.date)
+      allow(user).to receive(:transactions_missing_receipt).and_return(HcbCode.where(id: hcb_code.id))
+
+      described_class.new(receipt:).run!
+
+      expect(SuggestedPairing.find_by!(receipt:, hcb_code:)).to be_unreviewed
+      expect(receipt.reload.receiptable).to be_nil
+    end
+
+    it "doesn't attach automatically when two charges match equally well" do
+      first = create_pending_card_charge(amount_cents: -12_34)
+      second = create_pending_card_charge(amount_cents: -12_34)
+      receipt.update!(extracted_total_amount_cents: 12_34, extracted_card_last4: stripe_card.last4,
+                      extracted_date: first.date, extracted_merchant_name: "merchant 1")
+      allow(user).to receive(:transactions_missing_receipt).and_return(HcbCode.where(id: [first.id, second.id]))
+
+      described_class.new(receipt:).run!
+
+      expect(receipt.reload.receiptable).to be_nil
+      expect(user.receipt_bin.suggested_receipt_pairings).to be_empty
+    end
+
+    it "only considers charges near the receipt's date" do
+      recent = create_pending_card_charge
+      old = create_pending_card_charge
+      old.update_column(:created_at, 60.days.ago)
+      receipt.update!(extracted_total_amount_cents: 12_34, extracted_date: Time.current)
+      allow(user).to receive(:transactions_missing_receipt).and_return(HcbCode.where(id: [recent.id, old.id]))
+
+      described_class.new(receipt:).run!
+
+      expect(receipt.suggested_pairings.pluck(:hcb_code_id)).to eq([recent.id])
+    end
+  end
+
+  describe "#rank" do
+    let(:receipt) { create_receipt_in_bin }
+    let(:hcb_code) { create_pending_card_charge(amount_cents: -10_00) }
+
+    def distance_for(**extracted)
+      receipt.assign_attributes(extracted)
+      described_class.new(receipt:).rank([hcb_code], extracted: receipt).first[:distance]
+    end
+
+    it "leaves out what the receipt doesn't say instead of counting it as a miss" do
+      expect(distance_for(extracted_total_amount_cents: 10_00)).to eq(0)
+    end
+
+    it "still counts a missing amount as a miss" do
+      expect(distance_for(extracted_card_last4: stripe_card.last4)).to eq(50)
+    end
+
+    it "gives partial credit for a charge that includes a tip" do
+      expect(distance_for(extracted_total_amount_cents: 8_50)).to eq(50)
+      expect(distance_for(extracted_total_amount_cents: 5_00)).to eq(100)
+    end
+
+    it "leaves out the postcode when either side doesn't have one" do
+      allow(hcb_code).to receive(:stripe_merchant).and_return({ "name" => "merchant 1", "postal_code" => "00000" })
+
+      expect(distance_for(extracted_total_amount_cents: 10_00, extracted_merchant_zip_code: nil)).to eq(0)
+    end
+
+    it "compares postcodes that aren't US ZIP codes as text" do
+      allow(hcb_code).to receive(:stripe_merchant).and_return({ "name" => "merchant 1", "postal_code" => "SW1A 1AA" })
+
+      expect(distance_for(extracted_total_amount_cents: 10_00, extracted_merchant_zip_code: "sw1a1aa")).to eq(0)
+      expect(distance_for(extracted_total_amount_cents: 10_00, extracted_merchant_zip_code: "EC1A 1BB")).to be > 0
+    end
+
+    it "matches ZIP+4 codes on their first five digits" do
+      allow(hcb_code).to receive(:stripe_merchant).and_return({ "name" => "merchant 1", "postal_code" => "94103" })
+
+      expect(distance_for(extracted_total_amount_cents: 10_00, extracted_merchant_zip_code: "94103-1234")).to eq(0)
+    end
   end
 end
