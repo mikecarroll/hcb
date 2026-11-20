@@ -47,6 +47,8 @@ gem "pdf-reader" # ConfigurationIntegrity::Taxbandits::MaskedTinCheckJob checks 
 
 gem "airrecord", "~> 1.0" # Airtable API for internal operations
 
+gem "coolhand", "~> 0.11.0" # LLM call capture and feedback; inactive without COOLHAND__API_KEY
+
 gem "twilio-ruby" # SMS notifications
 
 gem "google-apis-admin_directory_v1", "~> 0.67.0" # GSuite

@@ -38,6 +38,10 @@ class SuggestedPairing < ApplicationRecord
 
   include AASM
 
+  COOLHAND_FEEDBACK_STATES = %w[accepted ignored reversed].freeze
+
+  after_commit :send_coolhand_feedback, if: -> { saved_change_to_aasm_state? && aasm_state.in?(COOLHAND_FEEDBACK_STATES) }
+
   aasm timestamps: true do
     state :unreviewed, initial: true # Suggestion is ready and waiting to be reviewed
     state :ignored                   # User has ignored the suggestion
@@ -71,6 +75,14 @@ class SuggestedPairing < ApplicationRecord
 
   def accepted?
     !!accepted_at
+  end
+
+  private
+
+  def send_coolhand_feedback
+    return if Coolhand.configuration.api_key.blank?
+
+    SuggestedPairing::CoolhandFeedbackJob.perform_later(self, aasm_state)
   end
 
 end

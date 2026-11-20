@@ -2,6 +2,9 @@
 
 module ReceiptService
   class Extract
+    COOLHAND_WORKLOAD = { key: "ReceiptService::Extract#run!", name: "Receipt extraction" }.freeze
+    COOLHAND_TEMPLATE = { key: "ReceiptService::Extract#run!/fields", name: "Receipt fields and memo" }.freeze
+
     def initialize(receipt:)
       @receipt = receipt.reload
     end
@@ -43,19 +46,23 @@ module ReceiptService
         f.response :json
       end
 
-      response = conn.post("/v1/chat/completions", {
-                             model: "gpt-5.6-luna",
-                             messages: [
-                               {
-                                 role: "system",
-                                 content: prompt
-                               },
-                               {
-                                 role: "user",
-                                 content: @textual_content.truncate(80_000, omission: "...#{@textual_content.last(40_000)}")
-                               }
-                             ]
-                           })
+      response = Coolhand.with_capture do
+        Coolhand.with_context(reporter: "hcb", workload: COOLHAND_WORKLOAD, template: COOLHAND_TEMPLATE) do
+          conn.post("/v1/chat/completions", {
+                      model: "gpt-5.6-luna",
+                      messages: [
+                        {
+                          role: "system",
+                          content: prompt
+                        },
+                        {
+                          role: "user",
+                          content: @textual_content.truncate(80_000, omission: "...#{@textual_content.last(40_000)}")
+                        }
+                      ]
+                    })
+        end
+      end
 
       ai_response = response.body.dig("choices", 0, "message", "content")
       if ai_response.starts_with?("```json") && ai_response.ends_with?("```")
@@ -95,6 +102,7 @@ module ReceiptService
         extracted_merchant_name: data.merchant_name,
         extracted_merchant_url: data.merchant_url,
         extracted_merchant_zip_code: data.merchant_zip_code,
+        extraction_request_id: response.headers["x-request-id"],
         data_extracted: true
       )
 

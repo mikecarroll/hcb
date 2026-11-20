@@ -238,6 +238,8 @@ GEM
       parser
       rails (>= 7.0)
       rainbow
+    coolhand (0.11.0)
+      base64 (~> 0.2)
     cose (1.3.1)
       cbor (~> 0.5.9)
       openssl-signature_algorithm (~> 1.0)
@@ -972,6 +974,7 @@ DEPENDENCIES
   chronic
   comma (~> 4.8)
   console1984
+  coolhand (~> 0.11.0)
   countries
   country_select (~> 8.0)
   cssbundling-rails (~> 1.4)
