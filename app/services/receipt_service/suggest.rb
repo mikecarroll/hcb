@@ -193,11 +193,14 @@ module ReceiptService
     end
 
     def merchant_name_value(hcb_code, extracted)
-      receipt_name = extracted.extracted_merchant_name.presence&.downcase
-      card_name = hcb_code.stripe_merchant&.[]("name").presence&.downcase
-      return nil if receipt_name.nil? || card_name.nil?
+      merchant = hcb_code.stripe_merchant || {}
 
-      card_name.include?(receipt_name) ? 0 : 1
+      ReceiptService::MerchantName.distance(
+        receipt_name: extracted.extracted_merchant_name,
+        receipt_url: extracted.extracted_merchant_url,
+        card_name: merchant["name"],
+        card_url: merchant["url"]
+      )
     end
 
     def user
