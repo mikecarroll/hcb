@@ -34,6 +34,7 @@ module Api
         @receipt = Receipt.find_by_public_id(params[:id]) || Receipt.find_by_hashid!(params[:id]) # TODO: remove hash ID after mobile app update
         authorize @receipt
 
+        ReceiptMatchEvent.record!(receipt: @receipt, kind: "receipt_deleted") if @receipt.receiptable.nil?
         @receipt.destroy!
         render json: { message: "Receipt successfully deleted" }, status: :ok
       end

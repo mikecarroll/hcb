@@ -84,7 +84,9 @@ class Ledger
       authorize @item
 
       memo = params.require(:ledger_item).permit(:memo)[:memo].presence
+      previous_memo = @item.custom_memo
       @item.update_custom_memo!(memo)
+      ReceiptMatchEvent.record_memo!(hcb_code: @item.hcb_code, previous_memo:, memo:)
 
       render partial: "ledger/items/memo/stream", locals: { item: @item }, formats: :turbo_stream
     end

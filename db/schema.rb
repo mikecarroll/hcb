@@ -12,7 +12,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_145606) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "citext"
   enable_extension "pg_catalog.plpgsql"
@@ -2343,6 +2343,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
     t.index ["stripe_authorization_id"], name: "index_raw_stripe_transactions_on_stripe_authorization_id"
   end
 
+  create_table "receipt_match_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "feedback_sent_at"
+    t.bigint "hcb_code_id"
+    t.boolean "human", default: true, null: false
+    t.string "kind", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.bigint "receipt_id", null: false
+    t.bigint "receipt_match_run_id"
+    t.datetime "updated_at", null: false
+    t.index ["receipt_id"], name: "index_receipt_match_events_on_receipt_id"
+    t.index ["receipt_match_run_id"], name: "index_receipt_match_events_on_receipt_match_run_id"
+  end
+
+  create_table "receipt_match_runs", force: :cascade do |t|
+    t.boolean "agreed"
+    t.string "call_id", null: false
+    t.integer "candidate_count"
+    t.boolean "candidates_truncated", default: false, null: false
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.float "llm_confidence"
+    t.string "llm_hcb_code_hashid"
+    t.float "llm_seconds"
+    t.string "model"
+    t.bigint "receipt_id", null: false
+    t.datetime "reported_at"
+    t.string "request_id"
+    t.float "ruby_confidence"
+    t.string "ruby_hcb_code_hashid"
+    t.float "ruby_seconds"
+    t.datetime "updated_at", null: false
+    t.index ["call_id"], name: "index_receipt_match_runs_on_call_id", unique: true
+    t.index ["receipt_id"], name: "index_receipt_match_runs_on_receipt_id"
+  end
+
   create_table "receipts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.boolean "data_extracted", default: false, null: false
@@ -3287,6 +3323,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_010000) do
   add_foreign_key "raw_pending_incoming_disbursement_transactions", "disbursements"
   add_foreign_key "raw_pending_outgoing_disbursement_transactions", "disbursements"
   add_foreign_key "raw_pending_stripe_service_fee_transactions", "stripe_service_fees"
+  add_foreign_key "receipt_match_events", "receipt_match_runs", on_delete: :nullify
+  add_foreign_key "receipt_match_events", "receipts", on_delete: :cascade
+  add_foreign_key "receipt_match_runs", "receipts", on_delete: :cascade
   add_foreign_key "receipts", "users"
   add_foreign_key "recurring_donations", "events"
   add_foreign_key "referral_attributions", "referral_links"

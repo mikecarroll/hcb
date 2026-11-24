@@ -50,6 +50,36 @@ RSpec.describe ReceiptService::Extract do
     expect(receipt.suggested_memo).to eq("☕ Coffee from Cafe")
   end
 
+  describe "Coolhand" do
+    it "files the request under a workload of its own, tagged for feedback on the memo, when the experiment is on" do
+      Flipper.enable(ReceiptMatch::FLAG)
+      receipt = build_receipt
+      captured = nil
+      allow(Coolhand).to receive(:with_context).and_wrap_original do |original, **declared, &block|
+        original.call(**declared) do
+          captured = [declared, Thread.current[:coolhand_capture_override]]
+          block.call
+        end
+      end
+
+      described_class.new(receipt:).run!
+
+      declared, capture_override = captured
+      expect(declared).to include(reporter: "hcb", client_unique_id: "receipt-extract:#{receipt.id}",
+                                  workload: a_hash_including(key: "ReceiptService::Extract#run!"))
+      expect(capture_override).to be(true)
+    end
+
+    it "doesn't capture the request when the experiment is off" do
+      receipt = build_receipt
+      expect(Coolhand).not_to receive(:with_context)
+
+      described_class.new(receipt:).run!
+
+      expect(receipt.reload.suggested_memo).to eq("☕ Coffee from Cafe")
+    end
+  end
+
   # Broadcasting through the HcbCode model made Turbo add an `hcb_code` local,
   # which the ledger item partial's strict `(item:)` locals rejected, so the
   # broadcast job raised ActionView::Template::Error.

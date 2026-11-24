@@ -99,7 +99,9 @@ class HcbCodesController < ApplicationController
     hcb_code_params = params.require(:hcb_code).permit(:memo, :prepended_to_memo, :location, :ledger_instance)
     hcb_code_params[:memo] = hcb_code_params[:memo].presence
 
+    previous_memo = @hcb_code.custom_memo
     @hcb_code.update_custom_memo!(hcb_code_params[:memo])
+    ReceiptMatchEvent.record_memo!(hcb_code: @hcb_code, previous_memo:, memo: hcb_code_params[:memo])
 
     if params[:hcb_code][:inline].present?
       return render partial: "hcb_codes/memo/memo", locals: { hcb_code: @hcb_code, form: false, prepended_to_memo: params[:hcb_code][:prepended_to_memo], location: params[:hcb_code][:location], ledger_instance: params[:hcb_code][:ledger_instance], renamed: true }

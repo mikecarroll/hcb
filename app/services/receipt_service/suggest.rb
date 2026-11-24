@@ -1,9 +1,15 @@
 # frozen_string_literal: true
 
 module ReceiptService
+  # Reads a receipt (ReceiptService::Extract), then finds the user's transactions it could belong to
+  # (ReceiptService::Match), and saves a SuggestedPairing for each. A receipt sent by email that matches
+  # closely enough is attached automatically.
   class Suggest
     include Turbo::Streams::ActionHelper
     include Turbo::Streams::StreamName
+
+    # An email receipt this close to a transaction is attached to it without asking.
+    AUTO_ATTACH_DISTANCE = 20
 
     def initialize(receipt:)
       @receipt = receipt
@@ -11,11 +17,20 @@ module ReceiptService
 
     def run!(include_details: false)
       return nil if user.nil?
-      return nil unless @receipt.has_textual_content?
 
-      @extracted = ::ReceiptService::Extract.new(receipt: @receipt).run!
+      has_text = @receipt.has_textual_content?
+      @extracted = ::ReceiptService::Extract.new(receipt: @receipt).run! if has_text
 
-      pairings = transaction_distances(include_details:)
+      # Matching is for receipts in the receipt bin; one that's already on a transaction has nothing to match.
+      return nil unless Receipt.in_receipt_bin.exists?(@receipt.id)
+
+      # Even a receipt the OCR couldn't read goes through the match, so the model can read its image.
+      matched = ::ReceiptMatch::Shadow.call(receipt: @receipt, extracted: @extracted, hcb_codes: potential_hcb_codes.to_a)
+      return nil unless has_text
+
+      pairings = matched.hcb_codes.zip(matched.candidates).map do |hcb_code, candidate|
+        { hcb_code:, distance: matched.match.distance(candidate) }
+      end
 
       if pairings.present?
         pairs = pairings.map do |pairing|
@@ -36,12 +51,13 @@ module ReceiptService
 
           if @receipt.email_receipt_bin? && pair = @receipt.suggested_pairings
                                                            .unreviewed
-                                                           .where("distance <= ?", 20)
+                                                           .where("distance <= ?", AUTO_ATTACH_DISTANCE)
                                                            .order(:receipt_id, distance: :asc)
                                                            .select("DISTINCT ON (receipt_id) suggested_pairings.*")
                                                            .select { |pairing| pairing.hcb_code.missing_receipt? }
                                                            .first
             pair.mark_accepted!
+            ReceiptMatchEvent.record!(receipt: @receipt, kind: "auto_attached", hcb_code: pair.hcb_code, human: false)
 
             return pair
           end
@@ -51,85 +67,7 @@ module ReceiptService
       end
     end
 
-    def distance(hcb_code)
-      return if @extracted.nil?
-
-      merchant_amount = hcb_code.pt&.raw_pending_stripe_transaction&.stripe_transaction&.[]("merchant_amount")
-
-      distances = {
-        amount_cents: {
-          value: @extracted.extracted_total_amount_cents && ((merchant_amount || hcb_code.amount_cents).abs - @extracted.extracted_total_amount_cents.abs).abs == 0 ? 0 : 1,
-          weight: 200,
-        },
-        card_last_four: {
-          value: @extracted.extracted_card_last4 == hcb_code.card&.last4 ? 0 : 1,
-          weight: 200,
-        },
-        date: {
-          value: begin
-            if @extracted.extracted_date.present?
-              distance = ((hcb_code.pt&.raw_pending_stripe_transaction&.created_at || hcb_code.date).to_date - @extracted.extracted_date.to_date).abs
-
-              if distance <= 1
-                0
-              elsif distance <= 5
-                0.2 + 0.8 * (distance / 5)
-              else
-                1
-              end
-            else
-              1
-            end
-          end,
-          weight: 100,
-        },
-        merchant_zip_code: {
-          value: begin
-            stripe_zip = hcb_code.stripe_merchant["postal_code"]
-            if stripe_zip == "00000"
-              nil
-              # https://mapofzipcodes.com/blog/00000-zip-code
-              # many postal codes are reported as 000000, and we don't
-              # want a lack of information to hurt pairing suggestions
-            else
-              stripe_zip = stripe_zip.to_i
-              receipt_zip = @extracted.extracted_merchant_zip_code.to_i
-              distance = (stripe_zip - receipt_zip).abs
-              if distance.zero?
-                0
-              elsif distance < 75
-                0.5
-              else
-                1
-              end
-            end
-          end,
-          weight: 50,
-        },
-        merchant_name: {
-          value: @extracted.extracted_merchant_name&.downcase&.in?(hcb_code.stripe_merchant["name"]&.downcase) ? 0 : 1,
-          weight: 50,
-        }
-      }
-
-      features = distances.values.reject { |data| data[:value].nil? }
-
-      value = features.map { |data| data[:value] * data[:weight] }.sum.to_f
-      weight = features.map { |data| data[:weight] }.sum.to_f
-
-      value / weight * 100
-    end
-
     private
-
-    def transaction_distances(include_details: false)
-      potential_hcb_codes.map do |hcb_code|
-        {
-          hcb_code:,
-          distance: distance(hcb_code)
-        }
-      end
-    end
 
     def user
       @receipt.user

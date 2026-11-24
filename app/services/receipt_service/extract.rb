@@ -43,19 +43,21 @@ module ReceiptService
         f.response :json
       end
 
-      response = conn.post("/v1/chat/completions", {
-                             model: "gpt-5.6-luna",
-                             messages: [
-                               {
-                                 role: "system",
-                                 content: prompt
-                               },
-                               {
-                                 role: "user",
-                                 content: @textual_content.truncate(80_000, omission: "...#{@textual_content.last(40_000)}")
-                               }
-                             ]
-                           })
+      response = ReceiptMatch.extraction(@receipt) do
+        conn.post("/v1/chat/completions", {
+                    model: "gpt-5.6-luna",
+                    messages: [
+                      {
+                        role: "system",
+                        content: prompt
+                      },
+                      {
+                        role: "user",
+                        content: @textual_content.truncate(80_000, omission: "...#{@textual_content.last(40_000)}")
+                      }
+                    ]
+                  })
+      end
 
       ai_response = response.body.dig("choices", 0, "message", "content")
       if ai_response.starts_with?("```json") && ai_response.ends_with?("```")

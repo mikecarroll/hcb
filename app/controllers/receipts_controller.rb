@@ -14,6 +14,9 @@ class ReceiptsController < ApplicationController
     @hcb_code = @receipt.hcb_code
     authorize @receipt
 
+    # A receipt deleted from the bin was never wanted by any of the user's transactions. Recorded first: the
+    # receipt's match events go with it, though the feedback on them is already on its way.
+    ReceiptMatchEvent.record!(receipt: @receipt, kind: "receipt_deleted") if @receiptable.nil?
     success = @receipt.destroy
 
     respond_to do |format|
@@ -45,6 +48,7 @@ class ReceiptsController < ApplicationController
     authorize @receiptable, policy_class: ReceiptablePolicy
 
     @receipt.update!(receiptable: @receiptable)
+    ReceiptMatchEvent.record!(receipt: @receipt, kind: "manually_linked", hcb_code: @hcb_code) if @hcb_code
 
     respond_to do |format|
       format.turbo_stream { render turbo_stream: generate_streams }
@@ -221,6 +225,7 @@ class ReceiptsController < ApplicationController
     else
       success = @receipt.update(receiptable: nil)
     end
+    ReceiptMatchEvent.record!(receipt: @receipt, kind: "reversed", hcb_code: @hcb_code) if success && @hcb_code
 
     respond_to do |format|
       format.turbo_stream { render turbo_stream: generate_streams }
