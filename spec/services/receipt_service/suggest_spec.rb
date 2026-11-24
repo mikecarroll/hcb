@@ -53,5 +53,57 @@ RSpec.describe ReceiptService::Suggest do
       expect(pairing).to be_accepted
       expect(receipt.reload.receiptable).to eq(hcb_code.ledger_item)
     end
+
+    it "doesn't match a receipt that's already on a transaction" do
+      hcb_code = create_pending_card_charge
+      receipt.update!(receiptable: hcb_code.ledger_item)
+      allow(user).to receive(:transactions_missing_receipt).and_return(HcbCode.where(id: hcb_code.id))
+
+      expect(described_class.new(receipt:).run!).to be_nil
+      expect(SuggestedPairing.where(receipt:)).to be_empty
+    end
+
+    context "when the experiment is on" do
+      let(:hcb_code) { create_pending_card_charge }
+      let(:image) { Squishling::Image.new(data: File.binread(file_fixture("receipt.png"))) }
+
+      before do
+        Flipper.enable(ReceiptMatch::FLAG)
+        allow(ReceiptMatch::Images).to receive(:for).and_return([image])
+        allow(user).to receive(:transactions_missing_receipt).and_return(HcbCode.where(id: hcb_code.id))
+      end
+
+      it "has the model read the receipt alongside the matcher without changing what's suggested" do
+        fake = fake_squishling { |llm| llm.step("gpt-5.6-terra").reply(hcb_code_id: nil, confidence: 0.0, rationale: nil) }
+
+        described_class.new(receipt:).run!
+
+        expect(fake.requests.size).to eq(1)
+        expect(ReceiptMatchRun.sole).to have_attributes(receipt:, ruby_hcb_code_hashid: nil, llm_hcb_code_hashid: nil)
+        expect(SuggestedPairing.find_by!(receipt:, hcb_code:)).to be_unreviewed
+      end
+
+      it "has the model read a receipt the OCR couldn't, without suggesting anything from it" do
+        allow(receipt).to receive(:has_textual_content?).and_return(false)
+        fake = fake_squishling { |llm| llm.step("gpt-5.6-terra").reply(hcb_code_id: hcb_code.hashid, confidence: 0.9, rationale: nil) }
+
+        expect(described_class.new(receipt:).run!).to be_nil
+
+        expect(fake.requests.size).to eq(1)
+        expect(SuggestedPairing.where(receipt:)).to be_empty
+      end
+
+      it "records an automatic attachment, which a later reversal is judged against" do
+        fake_squishling { |llm| llm.step(:any).reply(hcb_code_id: hcb_code.hashid, confidence: 0.9, rationale: nil) }
+        receipt.update!(extracted_total_amount_cents: 12_34, extracted_card_last4: stripe_card.last4,
+                        extracted_date: hcb_code.date, extracted_merchant_name: "merchant 1")
+
+        described_class.new(receipt:).run!
+
+        expect(ReceiptMatchEvent.sole).to have_attributes(kind: "auto_attached", human: false, hcb_code_id: hcb_code.id)
+        expect { ReceiptMatchEvent.sole.feedback }.not_to raise_error
+        expect(ReceiptMatchEvent.sole.feedback).to be_nil # a system event isn't feedback
+      end
+    end
   end
 end

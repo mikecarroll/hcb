@@ -6,6 +6,7 @@ class SuggestedPairingsController < ApplicationController
     authorize @pairing
 
     @pairing.mark_ignored!
+    ReceiptMatchEvent.record!(receipt: @pairing.receipt, kind: "suggestion_ignored", hcb_code: @pairing.hcb_code)
 
     respond_to do |format|
       format.turbo_stream { render turbo_stream: generate_streams }
@@ -24,10 +25,12 @@ class SuggestedPairingsController < ApplicationController
 
     @receiptable = @pairing.hcb_code
     @receipt = @pairing.receipt
+    ReceiptMatchEvent.record!(receipt: @receipt, kind: "suggestion_accepted", hcb_code: @receiptable)
 
     if params[:memo] == "true"
       custom_memo = @receipt.suggested_memo
       @receiptable.update_custom_memo!(custom_memo)
+      ReceiptMatchEvent.record!(receipt: @receipt, kind: "memo_accepted", hcb_code: @receiptable)
     end
 
     respond_to do |format|

@@ -38,6 +38,11 @@ gem "country_select", "~> 8.0"
 
 gem "faraday", "~> 1.10.6" # web requests
 
+# Receipt matching runs the LLM alongside the Ruby matcher (apprentice mode) and reports to Coolhand. squishling is
+# pinned to the call-id branch (Coolhand-Labs/squishling#119, stacked on #113) until both ship in a release.
+gem "squishling", github: "Coolhand-Labs/squishling", branch: "mikecarroll/squishling-call_id-pass"
+gem "coolhand", "~> 0.12" # monitors LLM calls and collects feedback on them
+
 gem "stripe", "11.7.0"
 gem "plaid", "~> 44.0"
 gem "yellow_pages", github: "hackclub/yellow_pages"

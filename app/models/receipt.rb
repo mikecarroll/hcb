@@ -66,6 +66,8 @@ class Receipt < ApplicationRecord
   end
 
   has_many :suggested_pairings, dependent: :destroy
+  has_many :receipt_match_runs, dependent: :destroy
+  has_many :receipt_match_events, dependent: :destroy
 
   # add a size to this array for it to be preprocessed
   # Receipt#preview first checks to see if a preprocessed
